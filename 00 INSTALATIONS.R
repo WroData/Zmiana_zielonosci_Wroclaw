@@ -5,6 +5,6 @@ install.packages("sen2r")
 install.packages("geojsonio")
 install.packages("reticulate")
 install.packages("scales")
-
+install.packages("tidyverse")
 
 Sen2r::write_scihub_login('login', 'password')

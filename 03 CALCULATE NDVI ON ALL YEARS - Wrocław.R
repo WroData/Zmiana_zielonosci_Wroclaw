@@ -45,6 +45,7 @@ library(sf)
 library(dplyr)
 library(scales)
 library(ggplot2)
+library(tidyverse)
 
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -115,19 +116,38 @@ calculate_NDIV <- function(dir, file_name_red, file_name_nir){
   
 }
 
+create_folder_if_not_exists <- function(folder_path) {
+  if (!dir.exists(folder_path)) {
+    dir.create(folder_path)
+    cat("Folder created:", folder_path, "\n")
+  } else {
+    cat("Folder already exists:", folder_path, "\n")
+  }
+}
+
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #### Stele ####
+CITY <- "Wroclaw"
+POINT_RADIUS <- 5000
+NDVI_TRESHOLD <- 0.4
 DATA_PATH <- "C:\\WroData data\\"
 MAIN_PATH <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
 SHP_PATH <- paste0(MAIN_PATH, "\\SHP")
-OUT_PATH <- paste0(MAIN_PATH, "\\20230906 Polska z Sientiela\\CHARTS")
-POINT_RADIUS <- 6000
+OUT_PATH <- paste0(
+  MAIN_PATH, 
+  "\\20230906 Polska z Sientiela\\", CITY, "\\", "CHARTS\\", 
+  str_pad(NDVI_TRESHOLD * 10, 2, side = "left", pad = "0"))
 
+
+
+create_folder_if_not_exists(paste0(MAIN_PATH, "\\20230906 Polska z Sientiela\\", CITY))
+create_folder_if_not_exists(paste0(MAIN_PATH, "\\20230906 Polska z Sientiela\\", CITY, "\\", "CHARTS"))
+create_folder_if_not_exists(OUT_PATH)
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #### Wczytanie danych ####
 
 # Wroclaw
-border <- read_sf(paste0(SHP_PATH, "\\Wroclaw\\Wroclaw.shp"))
+border <- read_sf(paste0(SHP_PATH, "\\", CITY,  "\\", CITY, ".shp"))
 
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -144,28 +164,29 @@ border <- read_sf(paste0(SHP_PATH, "\\Wroclaw\\Wroclaw.shp"))
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #### Okrag analizy ####
-lat <- 51.10850 #center point latitude
-long <- 17.0309636 #center point longitude
-rad <- 1000 #radius, in meters, around the center point to map
+
+
+DIC_centers = list('Wroclaw' = c(51.10850, 17.0309636), 'Krakow' = c(50.0623969, 19.9386889), 'Warszawa' = c(52.2307014, 21.0095595))
+lat  <- DIC_centers[[CITY]][1] #center point latitude
+long <- DIC_centers[[CITY]][2] #center point longitude
 pt <- data.frame(lat = lat, long = long)
 pt <- pt %>% st_as_sf(coords = c("long", "lat"), crs = 4326)
 
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #### Policz NDIV dla kolejnych lat ####
-path = "C:\\WroData data\\dane\\l2a\\/2023_05_27"
 
 nvid_across_years <- data.frame()
 # wczytaj wszytkie dostepne zdjecia
-for (path in list.dirs(paste0(DATA_PATH, "dane\\l2a\\"),recursive = FALSE) ){
+for (path in list.dirs(paste0(DATA_PATH, CITY, '\\', "dane\\l2a\\"),recursive = FALSE) ){
   # które sa puste, a które pelne
   if(length(list.dirs(path, recursive = FALSE)) > 0){
     d <- substrRight(path, 10)
     print(d)
     
     # find dir with photos
-    p <- list.dirs(paste0(DATA_PATH, "dane\\l2a\\", d, "\\"))
-    satelite_dir <- p[endsWith(p, "R10m")]
+    p <- list.dirs(paste0(DATA_PATH, CITY, '\\', "dane\\l2a\\", d, "\\"))
+    satelite_dir <- p[endsWith(p, "R10m")][1]
     
     # file names 
     files <- list.files(satelite_dir, full.names = T, recursive = FALSE)
@@ -196,7 +217,7 @@ for (path in list.dirs(paste0(DATA_PATH, "dane\\l2a\\"),recursive = FALSE) ){
     # NDVI
     ndvi_raster <- (sientel_nir - sientel_red) / (sientel_nir + sientel_red)
     # Create a mask based on the condition (values below 0.4)
-    mask <- ndvi_raster < 0.4
+    mask <- ndvi_raster < NDVI_TRESHOLD
     # Update values below 0.4 to 0
     ndvi_raster[mask] <- 0
     # Update values above or equal to 0.4 to 1
@@ -224,7 +245,7 @@ for (path in list.dirs(paste0(DATA_PATH, "dane\\l2a\\"),recursive = FALSE) ){
     rgb_stack$blue <- sientel_blue_rescaled
     
     # PLOT not croped RGB
-    png(filename = paste0(OUT_PATH, "", "\\Wykres RGB - ", d, " - ",Sys.Date(), " .png", sep=""),
+    png(filename = paste0(OUT_PATH, "",  "\\Wykres RGB - ", d, " - ",Sys.Date(), " .png", sep=""),
         width = 7, height = 5, units = 'in', res = 500)
       plotRGB(rgb_stack, main = d )
       # Add the shapefile outline to the plot
@@ -267,13 +288,6 @@ TEXT_COL <- "#4e4d47"
 TEXT_BASE_SIZE <- 12
 
 
-# add cicle to see where to clip
-lat <- 51.10850 #center point latitude
-long <- 17.0309636 #center point longitude
-rad <- 1000 #radius, in meters, around the center point to map
-pt <- data.frame(lat = lat, long = long)
-pt_trans <- pt %>% st_as_sf(coords = c("long", "lat"), crs = 4326)
-
 
 for (year in names(nvid_across_years)[-c(1, 2)]){
   print(year)
@@ -287,14 +301,24 @@ for (year in names(nvid_across_years)[-c(1, 2)]){
     ) +
     labs(
       title = {{year}},
-      subtitle = "test",
-      caption = "Autor: WroData | Dane: sentinels.copernicus.eu | Konsultacja merytoryczna: Polska z Sentinela",
-    )
+      caption = "Autor: WroData | Dane: sentinels.copernicus.eu",
+    ) +
+    theme(
+      axis.line = element_blank(),
+      axis.ticks = element_blank(),
+      panel.border = element_blank(),
+      legend.position = "none",
+      axis.title  = element_blank(),
+      axis.text   = element_blank(),
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank(),
+      panel.grid.minor = element_blank(), 
+      panel.grid.major = element_blank())
   
   # save
   png(filename = paste0(OUT_PATH, "", "\\Wykres NDVI croped - ", year, " - ", 
                         Sys.Date(), " .png", sep=""),
-      bg=FILL_COL, width = 7, height = 5, units = 'in', res = 500)
+      bg=FILL_COL, width = 7, height = 7.5, units = 'in', res = 500)
   plot(w)
   dev.off() 
   
@@ -305,7 +329,7 @@ for (year in names(nvid_across_years)[-c(1, 2)]){
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #### plot change ####
-
+DIC_wolacz = list('Wroclaw' = 'we Wroclawiu', 'Krakow' = 'w Krakowie', 'Warszawa' = 'w Warszawie')
 
 plot_diff <- function(nvid_across_years, rok_poczatkowy, rok_koncowy, file_name_prefix = ""){
     
@@ -340,32 +364,40 @@ plot_diff <- function(nvid_across_years, rok_poczatkowy, rok_koncowy, file_name_
   TEXT_COL <- "#4e4d47"
   TEXT_BASE_SIZE <- 12
   
+  my_colors        <- c("magenta4", "forestgreen",  "olivedrab2", "firebrick4",  "gray90")
+  names(my_colors) <- c('inne',     "Zielen" , "Nowa zielen", "Usunieta zielen", "Brak zieleni"  )
   
   w <- ggplot() +
     geom_tile(data = NDVI_diff, aes(x = x, y = y, fill = diff)) +
     labs(
       title = paste0(
-        "Porównanie zieleni we Wroclawiu miedzy ", 
+        "Porównanie zieleni ",
+        DIC_wolacz[[CITY]],
+        " miedzy ", 
         format(as.Date(rok_poczatkowy, format = "r_%Y_%m_%d"), format = "%m.'%y"),
         " a ",
         format(as.Date(rok_koncowy, format = "r_%Y_%m_%d"), format = "%m.'%y")),
-      subtitle = paste0(
-        "W tym czasie " ,
-        dif_text[dif_text$diff == "Usunieta zielen", "Percentage"],
-        " powierzchni przestalo byc zielone, a na ", 
-        dif_text[dif_text$diff == "Nowa zielen", "Percentage"], 
-        " powstala nowa zielen"
-        ),
-      caption = "Autor: WroData | Dane: sentinels.copernicus.eu | Konsultacja merytoryczna: Polska z Sentinela",
+      subtitle = "Widac wyraznie budowe nowych tras komunikacyjnych (AWW oraz TAT)",
+      #subtitle = paste0(
+      #  "W tym czasie " ,
+      #  dif_text[dif_text$diff == "Usunieta zielen", "Percentage"],
+      #  " powierzchni przestalo byc zielone, a na ", 
+      #  dif_text[dif_text$diff == "Nowa zielen", "Percentage"], 
+      #  " powstala nowa zielen"
+      #  ),
+      caption = "Autor: WroData | Dane: sentinels.copernicus.eu",
       x = "",
-      y = ""
+      y = "",
+      fill = ""
     ) + 
     
     
     scale_fill_manual(
-      values = c('inne' = "magenta4", "Zielen" = "forestgreen",  "Nowa zielen" = "olivedrab2", "Usunieta zielen" = "firebrick4", "Brak zieleni" = "gray88"),
-      breaks = c('inne', "Zielen",  "Nowa zielen", "Usunieta zielen", "Brak zieleni"),
-      labels = c('inne', "Zielen",  "Nowa zielen", "Usunieta zielen", "Brak zieleni"),
+      values = my_colors,
+      # values = c('inne' = "magenta4", "Zielen" = "forestgreen",  "Nowa zielen" = "olivedrab2", "Usunieta zielen" = "firebrick4", "Brak zieleni" = "pink"),
+      #breaks = c('inne', "Zielen",  "Nowa zielen", "Usunieta zielen", "Brak zieleni"),
+      #labels = c('inne', "Zielen",  "Nowa zielen", "Usunieta zielen", "Brak zieleni"),
+      breaks = c("Zielen",  "Nowa zielen", "Usunieta zielen")
     ) +
     theme(
       axis.line = element_blank(),
@@ -412,24 +444,32 @@ plot_diff <- function(nvid_across_years, rok_poczatkowy, rok_koncowy, file_name_
   
   # save
   png(filename = paste0(OUT_PATH, "", "\\", file_name_prefix ,"Wykres diff NDVI - ", rok_poczatkowy, " a ", rok_koncowy, " - ", Sys.Date(), " .png", sep=""),
-      bg=FILL_COL, width = 7, height = 7.5, units = 'in', res = 500)
+      bg=FILL_COL, width = 7, height = 8.2, units = 'in', res = 500)
   plot(w)
   dev.off() 
-  
+  # return(w)
 }
 
 
 
-plot_diff(nvid_across_years, rok_poczatkowy = "r_2018_07_07", rok_koncowy = "r_2023_05_27")
-plot_diff(nvid_across_years, rok_poczatkowy = "r_2019_06_30", rok_koncowy = "r_2021_06_19")
-plot_diff(nvid_across_years, rok_poczatkowy = "r_2019_06_30", rok_koncowy = "r_2020_07_31")
-plot_diff(nvid_across_years, rok_poczatkowy = "r_2019_08_31", rok_koncowy = "r_2020_07_31")
+
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2017_05_28", rok_koncowy = "r_2021_06_19")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2018_07_07", rok_koncowy = "r_2021_06_19")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2018_08_29", rok_koncowy = "r_2021_06_19")
+
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2017_05_28", rok_koncowy = "r_2020_07_31")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2018_07_07", rok_koncowy = "r_2020_07_31")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2018_08_29", rok_koncowy = "r_2020_07_31")
 
 
 
 
-plot_diff(nvid_across_years, rok_poczatkowy = "r_2018_07_07", rok_koncowy = "r_2019_06_30", file_name_prefix = "seq ")
-plot_diff(nvid_across_years, rok_poczatkowy = "r_2019_06_30", rok_koncowy = "r_2020_07_31", file_name_prefix = "seq ")
-plot_diff(nvid_across_years, rok_poczatkowy = "r_2020_07_31", rok_koncowy = "r_2021_06_19", file_name_prefix = "seq ")
-plot_diff(nvid_across_years, rok_poczatkowy = "r_2021_06_19", rok_koncowy = "r_2023_05_27", file_name_prefix = "seq ")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2018_05_03", rok_koncowy = "r_2018_09_10", file_name_prefix = "seq ")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2018_09_10", rok_koncowy = "r_2019_08_28", file_name_prefix = "seq ")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2019_08_28", rok_koncowy = "r_2020_07_26", file_name_prefix = "seq ")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2020_07_26", rok_koncowy = "r_2021_07_11", file_name_prefix = "seq ")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2021_07_11", rok_koncowy = "r_2022_07_21", file_name_prefix = "seq ")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2022_07_21", rok_koncowy = "r_2023_09_06", file_name_prefix = "seq ")
+plot_diff(nvid_across_years, rok_poczatkowy = "r_2023_09_06", rok_koncowy = "r_2023_09_16", file_name_prefix = "seq ")
+
 
